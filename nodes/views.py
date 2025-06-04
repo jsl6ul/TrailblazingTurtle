@@ -17,18 +17,20 @@ END = datetime.now()
 
 def cpu_count(node):
     # return the number of cpu cores on a node
-    query = 'count(node_cpu_seconds_total{{ {hostname_label}=~"{node}(:.*)", mode="idle", {filter} }}) by ({hostname_label})'.format(
+    query = 'count(node_cpu_seconds_total{{ {hostname_label}=~"{node}{domain}(:.*)", mode="idle", {filter} }}) by ({hostname_label})'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats = prom.query_prometheus_multiple(query, START, END, step="5m")
     return int(max(stats[0]['y']))
 
 
 def memory(node):
-    query = 'node_memory_MemTotal_bytes{{ {hostname_label}=~"{node}(:.*)", {filter} }}'.format(
+    query = 'node_memory_MemTotal_bytes{{ {hostname_label}=~"{node}{domain}(:.*)", {filter} }}'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats = prom.query_prometheus_multiple(query, START, END, step="5m")
     return int(max(stats[0]['y']))
@@ -141,9 +143,10 @@ def node(request, node):
     context = {}
     context['node'] = node
 
-    query_gpu = 'count(slurm_job_utilization_gpu{{{hostname_label}=~"{node}(:.*)", {filter}}})'.format(
+    query_gpu = 'count(slurm_job_utilization_gpu{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}})'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats_gpu = prom.query_prometheus_multiple(query_gpu, START, END)
     context['gpu'] = len(stats_gpu) > 0
@@ -172,23 +175,27 @@ def node(request, node):
 
 def node_gantt(node, gpu=False):
     if gpu:
-        query_alloc = 'count(slurm_job_utilization_gpu{{{hostname_label}=~"{node}(:.*)", {filter}}})'.format(
+        query_alloc = 'count(slurm_job_utilization_gpu{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}})'.format(
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter())
-        query_used = 'count(slurm_job_utilization_gpu{{{hostname_label}=~"{node}(:.*)", {filter}}}) by (account,user,slurmjobid)'.format(
+        query_used = 'count(slurm_job_utilization_gpu{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}}) by (account,user,slurmjobid)'.format(
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter())
         unit = 'gpu'
     else:
-        query_alloc = 'count(node_cpu_seconds_total{{{hostname_label}=~"{node}(:.*)", mode="idle", {filter}}})'.format(
+        query_alloc = 'count(node_cpu_seconds_total{{{hostname_label}=~"{node}{domain}(:.*)", mode="idle", {filter}}})'.format(
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter())
-        query_used = 'count(slurm_job_core_usage_total{{{hostname_label}=~"{node}(:.*)", {filter}}}) by (account,user,slurmjobid)'.format(
+        query_used = 'count(slurm_job_core_usage_total{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}}) by (account,user,slurmjobid)'.format(
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter())
         unit = 'cores'
 
@@ -264,8 +271,9 @@ def node_gantt_gpu(request, node):
 def node_state(node):
     events = []
     for state in ['down', 'drained', 'draining', 'fail']:
-        query = 'count(slurm_node_state_info{{node="{node}", state=~"{state}", {filter}}}) or on() vector(0)'.format(
+        query = 'count(slurm_node_state_info{{node="{node}{domain}", state=~"{state}", {filter}}}) or on() vector(0)'.format(
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             state=state,
             filter=prom.get_filter())
         stats = prom.query_prometheus_multiple(query, START, END)
@@ -304,9 +312,10 @@ def node_state(node):
 @staff
 @parse_start_end(timedelta_start=timedelta(days=7))
 def graph_disk_used(request, node):
-    query_disk = '(node_filesystem_size_bytes{{{hostname_label}=~"{node}(:.*)", {filter}}} - node_filesystem_avail_bytes{{{hostname_label}=~"{node}(:.*)", {filter}}})/(1000*1000*1000)'.format(
+    query_disk = '(node_filesystem_size_bytes{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}} - node_filesystem_avail_bytes{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}})/(1000*1000*1000)'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats_disk = prom.query_prometheus_multiple(query_disk, request.start, request.end, step=request.step)
 
@@ -334,9 +343,10 @@ def graph_disk_used(request, node):
 @staff
 @parse_start_end(timedelta_start=timedelta(days=7))
 def graph_cpu_jobstats(request, node):
-    query = 'sum(rate(slurm_job_core_usage_total{{{hostname_label}=~"{node}(:.*)", {filter}}}[{step}s]) / 1000000000) by (user, slurmjobid)'.format(
+    query = 'sum(rate(slurm_job_core_usage_total{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}}[{step}s]) / 1000000000) by (user, slurmjobid)'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter(),
         step=prom.rate('slurm-job-exporter'))
     stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
@@ -365,9 +375,10 @@ def graph_cpu_jobstats(request, node):
 @staff
 @parse_start_end(timedelta_start=timedelta(days=7))
 def graph_cpu_node(request, node):
-    query = 'sum by (mode)(irate(node_cpu_seconds_total{{mode!="idle",{hostname_label}=~"{node}(:.*)",{filter}}}[{step}s]))'.format(
+    query = 'sum by (mode)(irate(node_cpu_seconds_total{{mode!="idle",{hostname_label}=~"{node}{domain}(:.*)",{filter}}}[{step}s]))'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter(),
         step=prom.rate('node_exporter'))
     stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
@@ -397,9 +408,10 @@ def graph_cpu_node(request, node):
 @staff
 @parse_start_end(timedelta_start=timedelta(days=7))
 def graph_memory_jobstats(request, node):
-    query = '(sum(slurm_job_memory_usage{{{hostname_label}=~"{node}(:.*)", {filter}}}) by (user, slurmjobid))/(1024*1024*1024)'.format(
+    query = '(sum(slurm_job_memory_usage{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}}) by (user, slurmjobid))/(1024*1024*1024)'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
 
@@ -429,15 +441,16 @@ def graph_memory_jobstats(request, node):
 @parse_start_end(timedelta_start=timedelta(days=7))
 def graph_memory_node(request, node):
     data = []
-    query_apps = '(node_memory_MemTotal_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}} - \
-        node_memory_MemFree_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}} - \
-        node_memory_Buffers_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}} - \
-        node_memory_Cached_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}} - \
-        node_memory_Slab_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}} - \
-        node_memory_PageTables_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}} - \
-        node_memory_SwapCached_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}})/(1024*1024*1024)'.format(
+    query_apps = '(node_memory_MemTotal_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}} - \
+        node_memory_MemFree_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}} - \
+        node_memory_Buffers_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}} - \
+        node_memory_Cached_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}} - \
+        node_memory_Slab_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}} - \
+        node_memory_PageTables_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}} - \
+        node_memory_SwapCached_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}})/(1024*1024*1024)'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats_apps = prom.query_prometheus_multiple(query_apps, request.start, request.end, step=request.step)
     for line in stats_apps:
@@ -451,10 +464,11 @@ def graph_memory_node(request, node):
         })
 
     for memory_type in ['PageTables', 'SwapCached', 'Slab', 'Cached', 'Buffers', 'HardwareCorrupted']:
-        query = 'node_memory_{memory_type}_bytes{{{hostname_label}=~"{node}(:.*)",{filter}}}/(1024*1024*1024)'.format(
+        query = 'node_memory_{memory_type}_bytes{{{hostname_label}=~"{node}{domain}(:.*)",{filter}}}/(1024*1024*1024)'.format(
             memory_type=memory_type,
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter())
         stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
         for line in stats:
@@ -485,10 +499,11 @@ def graph_ethernet_bdw(request, node):
     data = []
 
     for direction in ['receive', 'transmit']:
-        query = 'rate(node_network_{direction}_bytes_total{{device!~"ib.*|lo", {hostname_label}=~"{node}(:.*)", {filter}}}[{step}s]) * 8 / (1000*1000)'.format(
+        query = 'rate(node_network_{direction}_bytes_total{{device!~"ib.*|lo", {hostname_label}=~"{node}{domain}(:.*)", {filter}}}[{step}s]) * 8 / (1000*1000)'.format(
             direction=direction,
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter(),
             step=prom.rate('node_exporter'))
         stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
@@ -521,10 +536,11 @@ def graph_ethernet_bdw(request, node):
 def graph_infiniband_bdw(request, node):
     data = []
     for direction in ['received', 'transmitted']:
-        query = 'rate(node_infiniband_port_data_{direction}_bytes_total{{{hostname_label}=~"{node}(:.*)", {filter}}}[{step}s]) * 8 / (1000*1000*1000)'.format(
+        query = 'rate(node_infiniband_port_data_{direction}_bytes_total{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}}[{step}s]) * 8 / (1000*1000*1000)'.format(
             direction=direction,
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter(),
             step=prom.rate('node_exporter'))
         stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
@@ -557,10 +573,11 @@ def graph_infiniband_bdw(request, node):
 def graph_disk_iops(request, node):
     data = []
     for direction in ['reads', 'writes']:
-        query = 'rate(node_disk_{direction}_completed_total{{{hostname_label}=~"{node}(:.*)",device=~"nvme.n.|sd.|vd.", {filter}}}[{step}s])'.format(
+        query = 'rate(node_disk_{direction}_completed_total{{{hostname_label}=~"{node}{domain}(:.*)",device=~"nvme.n.|sd.|vd.", {filter}}}[{step}s])'.format(
             direction=direction,
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter(),
             step=prom.rate('node_exporter'))
         stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
@@ -593,10 +610,11 @@ def graph_disk_iops(request, node):
 def graph_disk_bdw(request, node):
     data = []
     for direction in ['read', 'written']:
-        query = 'rate(node_disk_{direction}_bytes_total{{{hostname_label}=~"{node}(:.*)",device=~"nvme.n.|sd.|vd.", {filter}}}[{step}s])'.format(
+        query = 'rate(node_disk_{direction}_bytes_total{{{hostname_label}=~"{node}{domain}(:.*)",device=~"nvme.n.|sd.|vd.", {filter}}}[{step}s])'.format(
             direction=direction,
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter(),
             step=prom.rate('node_exporter'))
         stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
@@ -638,10 +656,11 @@ def graph_gpu_utilization(request, node):
     ]
 
     for q in queries:
-        query = '{query}{{{hostname_label}=~"{node}(:.*)", {filter}}}'.format(
+        query = '{query}{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}}'.format(
             query=q[0],
             hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
             node=node,
+            domain=settings.HOSTNAME_DOMAIN,
             filter=prom.get_filter())
         stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
 
@@ -672,9 +691,10 @@ def graph_gpu_utilization(request, node):
 @staff
 @parse_start_end(timedelta_start=timedelta(days=7))
 def graph_gpu_memory(request, node):
-    query = 'slurm_job_memory_usage_gpu{{{hostname_label}=~"{node}(:.*)", {filter}}} /(1024*1024*1024)'.format(
+    query = 'slurm_job_memory_usage_gpu{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}} /(1024*1024*1024)'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
 
@@ -705,9 +725,10 @@ def graph_gpu_memory(request, node):
 @staff
 @parse_start_end(timedelta_start=timedelta(days=7))
 def graph_gpu_power(request, node):
-    query = 'slurm_job_power_gpu{{{hostname_label}=~"{node}(:.*)", {filter}}}/1000'.format(
+    query = 'slurm_job_power_gpu{{{hostname_label}=~"{node}{domain}(:.*)", {filter}}}/1000'.format(
         hostname_label=settings.PROM_NODE_HOSTNAME_LABEL,
         node=node,
+        domain=settings.HOSTNAME_DOMAIN,
         filter=prom.get_filter())
     stats = prom.query_prometheus_multiple(query, request.start, request.end, step=request.step)
 
